@@ -5,26 +5,40 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-
-
 def get_last_command():
     """Return the last command from an interactive shell.
 
-    Tries the user's login shell with `fc -ln -1`. If that fails, falls
-    back to reading a likely history file (HISTFILE, ~/.bash_history or
-    ~/.zsh_history) and returns the last non-empty line.
-    Returns None on failure.
+    Attempts to ask the user's login shell for recent history and returns
+    the most-recent command that doesn't look like the current tnm
+    invocation. This helps avoid capturing `tnm -g ...` itself when the
+    shell writes the command into history immediately.
+
+    Falls back to reading likely history files (HISTFILE, ~/.bash_history
+    or ~/.zsh_history) if needed. Returns None on failure.
     """
     shell = os.environ.get('SHELL', 'bash')
+    # Build a few tokens to recognise the current invocation so we can skip it
     try:
-        last = subprocess.check_output([shell, '-i', '-c', 'fc -ln -1'], text=True, stderr=subprocess.DEVNULL)
-        last = last.strip()
-        if last:
-            return last
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+        invoked = ' '.join(sys.argv)
+        invoked_basename = Path(sys.argv[0]).name
+        invoked_stem = Path(sys.argv[0]).stem
+    except Exception:
+        invoked = ''
+        invoked_basename = ''
+        invoked_stem = ''
 
-    # Fallback: try HISTFILE or common history files
+    def looks_like_invocation(cmd: str) -> bool:
+        if not cmd:
+            return False
+        low = cmd.strip()
+        # if the command contains the script name or the full argv, treat it as invocation
+        if invoked and invoked in low:
+            return True
+        if invoked_basename and invoked_basename in low:
+            return True
+        if invoked_stem and invoked_stem in low:
+            return True
+        return False
     histfile = os.environ.get('HISTFILE')
     candidates = []
     if histfile:
@@ -40,12 +54,18 @@ def get_last_command():
             with open(path, 'r', encoding='utf-8', errors='ignore') as h:
                 for line in reversed(h.readlines()):
                     l = line.strip()
+                    if os.environ.get('TNM_DEBUG'):
+                        print(f"DEBUG: file {path} line repr: {repr(line)}", file=sys.stderr)
                     if not l:
                         continue
                     # zsh history lines may have timestamp prefixes like ': 160000:0;cmd'
                     if l.startswith(':') and ';' in l:
                         l = l.split(';', 1)[1]
-                    return l
+                    # ignore very short entries which are likely accidental keystrokes
+                    if len(l.strip()) <= 1:
+                        continue
+                    if not looks_like_invocation(l):
+                        return l
         except Exception:
             continue
 
@@ -68,6 +88,8 @@ def build_entry(title: str, cmd: str, desc: str) -> str:
     entry.append("")
     entry.append("---")
     return "\n".join(entry) + "\n"
+
+
 CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'tnm'
 GROUPS_FILE = CONFIG_DIR / 'groups.json'
 
@@ -97,7 +119,17 @@ def create_group(name: str, path: str, overwrite: bool = False) -> bool:
     groups = load_groups()
     if name in groups and not overwrite:
         return False
-    groups[name] = os.path.expanduser(path)
+    target = os.path.expanduser(path)
+    # create parent dir and an empty file so users see the file immediately
+    try:
+        tp = Path(target)
+        tp.parent.mkdir(parents=True, exist_ok=True)
+        if not tp.exists():
+            tp.write_text('', encoding='utf-8')
+    except Exception:
+        # If we couldn't create the file, still save the mapping
+        pass
+    groups[name] = target
     return save_groups(groups)
 
 
@@ -109,7 +141,13 @@ def get_group_path(name: str):
 def usage_and_exit(msg: str = None, code: int = 1):
     if msg:
         print(msg)
-    print("\nUsage:\n  Create group: tnm -n NAME PATH\n  Add to group: tnm -g NAME [-y] [--dry-run]\n  List groups: tnm -l\n")
+    usage_text = (
+        "Usage:\n"
+        "  Create group: tnm -n NAME [PATH]  (if PATH omitted defaults to ~/tnm/NAME.md)\n"
+        "  Add to group: tnm -g NAME [-y] [--dry-run]\n"
+        "  List groups: tnm -l\n"
+    )
+    sys.stdout.write(usage_text)
     sys.exit(code)
 
 
@@ -122,6 +160,22 @@ def main(argv=None):
     # collect global flags
     dry_run = '--dry-run' in argv
     yes = '-y' in argv or '--yes' in argv
+    # optional command override: -c 'the command' or --cmd 'the command'
+    cmd_override = None
+    if '-c' in argv:
+        try:
+            i = argv.index('-c')
+            if i + 1 < len(argv):
+                cmd_override = argv[i + 1]
+        except ValueError:
+            pass
+    if '--cmd' in argv:
+        try:
+            i = argv.index('--cmd')
+            if i + 1 < len(argv):
+                cmd_override = argv[i + 1]
+        except ValueError:
+            pass
 
     # Quick list of groups
     if argv[0] in ('-l', '--list') or '-l' in argv:
@@ -136,10 +190,14 @@ def main(argv=None):
 
     # Create group flow: -n NAME PATH
     if argv[0] in ('-n', '--new'):
-        if len(argv) < 3:
-            usage_and_exit('Error: missing NAME or PATH for new group')
+        if len(argv) < 2:
+            usage_and_exit('Error: missing NAME for new group')
         name = argv[1]
-        path = argv[2]
+        # allow omitted PATH: default to ~/tnm/<name>.md
+        if len(argv) >= 3:
+            path = argv[2]
+        else:
+            path = os.path.join(str(Path.home()), 'tnm', f"{name}.md")
         if get_group_path(name) and not yes:
             resp = input(f"Group '{name}' already exists. Overwrite? [y/N]: ").strip().lower()
             if resp not in ('y', 'yes'):
@@ -166,10 +224,32 @@ def main(argv=None):
                 print("No groups defined yet. Create one with: tnm -n NAME PATH")
             return
 
-        last_cmd = get_last_command()
-        if not last_cmd:
-            print("Couldn't fetch the last command.")
-            return
+        if cmd_override:
+            last_cmd = cmd_override
+        else:
+            last_cmd = get_last_command()
+        # normalize whitespace-only results and detect non-printable-only results
+        if isinstance(last_cmd, str):
+            last_cmd = last_cmd.rstrip('\n')
+        # compute a visible-text version to detect invisible / control-only content
+        visible = ''
+        if isinstance(last_cmd, str):
+            visible = ''.join(ch for ch in last_cmd if ch.isprintable() and not ch.isspace())
+            visible = visible.strip()
+        if not last_cmd or not visible:
+            # prompt the user for the command as a fallback
+            try:
+                fallback = input("Couldn't fetch the last command automatically. Enter command to save (or leave empty to cancel): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print('\nAborted by user.')
+                return
+            if not fallback:
+                print('Cancelled.')
+                return
+            last_cmd = fallback
+        else:
+            # prefer the stripped version for display
+            last_cmd = last_cmd.strip()
 
         print(f"Last command: {last_cmd}")
         try:

@@ -80,10 +80,10 @@ def add_group_interactive():
     if not name:
         print('Cancelled — empty name.')
         return
-    path = input('Path to markdown file (will be created if needed): ').strip()
+    path = input('Path to markdown file (leave blank for default ~/tnm/<name>.md): ').strip()
     if not path:
-        print('Cancelled — empty path.')
-        return
+        path = f"~/tnm/{name}.md"
+        print(f"Using default path: {path}")
     groups = load_groups()
     if name in groups:
         resp = input(f"Group '{name}' exists. Overwrite mapping? [y/N]: ").strip().lower()
@@ -237,6 +237,40 @@ def uninstall_interactive():
             print(f'Failed to remove files: {e}')
 
 
+def update_interactive():
+    """Run the update script from the installed share dir (or attempt to download it)"""
+    script_dir = Path(__file__).resolve().parent
+    update_script = script_dir / 'update_tnm.sh'
+    print('This will fetch the latest tnm files from https://github.com/i7mada249/tnm and update the installed scripts.')
+    resp = input('Continue and update? [y/N]: ').strip().lower()
+    if resp not in ('y', 'yes'):
+        print('Cancelled.')
+        return
+
+    if update_script.exists():
+        try:
+            print(f'Running update script: {update_script}')
+            subprocess.run(['bash', str(update_script)], check=True)
+            print('Update completed.')
+        except subprocess.CalledProcessError as e:
+            print(f'Update script failed: {e}')
+    else:
+        # fallback: try to download update_tnm.sh from GitHub raw and run it
+        url = 'https://raw.githubusercontent.com/i7mada249/tnm/main/update_tnm.sh'
+        try:
+            import urllib.request
+            print(f'Downloading update script from {url}...')
+            data = urllib.request.urlopen(url, timeout=15).read()
+            tmp = script_dir / 'update_tnm_downloaded.sh'
+            tmp.write_bytes(data)
+            tmp.chmod(0o755)
+            subprocess.run(['bash', str(tmp)], check=True)
+            tmp.unlink()
+            print('Update completed (downloaded script).')
+        except Exception as e:
+            print(f'Failed to download/run update script: {e}')
+
+
 def main_loop():
     while True:
         clear()
@@ -247,6 +281,7 @@ def main_loop():
         print('  [d] Delete group')
         print('  [l] List groups')
         print('  [v] View group history')
+        print('  [r] Update tnm from repo')
         print('  [u] Uninstall tnm')
         print('  [h] Help (show main commands)')
         print('  [q] Quit')
@@ -264,6 +299,10 @@ def main_loop():
         elif choice == 'v':
             clear()
             show_history_interactive()
+            pause()
+        elif choice == 'r':
+            clear()
+            update_interactive()
             pause()
         elif choice == 'u':
             clear()
