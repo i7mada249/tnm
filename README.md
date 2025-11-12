@@ -119,7 +119,3 @@ tnm
 Troubleshooting
 
 - If `tnm` is not found after install, ensure `~/.local/bin` is in your PATH and reload your shell: `export PATH="$HOME/.local/bin:$PATH"` then `hash -r` or restart the shell.
-
-License
-
-MIT (or choose a preferred license).
