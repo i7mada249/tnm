@@ -5,6 +5,55 @@ Interactive shell for tnm — shows groups, allows add/delete, and lists main co
 import sys
 import subprocess
 from pathlib import Path
+import os
+
+
+# --- Color helpers -------------------------------------------------
+# Respect NO_COLOR or TERM-less environments
+def _supports_color():
+    if os.environ.get('NO_COLOR'):
+        return False
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+
+_COLOR_ON = _supports_color()
+
+_COLORS = {
+    'black': 30,
+    'red': 31,
+    'green': 32,
+    'yellow': 33,
+    'blue': 34,
+    'magenta': 35,
+    'cyan': 36,
+    'white': 37,
+    'bright_black': 90,
+    'bright_red': 91,
+    'bright_green': 92,
+    'bright_yellow': 93,
+    'bright_blue': 94,
+    'bright_magenta': 95,
+    'bright_cyan': 96,
+    'bright_white': 97,
+}
+
+
+def c(text, color=None, bold=False):
+    """Colorize text using ANSI SGR codes when supported."""
+    if not _COLOR_ON or not color:
+        return text
+    code = _COLORS.get(color, None)
+    if code is None:
+        return text
+    parts = []
+    if bold:
+        parts.append('1')
+    parts.append(str(code))
+    return f"\033[{';'.join(parts)}m{text}\033[0m"
+
+# -------------------------------------------------------------------
 
 try:
     # Import management helpers from tnm.py
@@ -68,22 +117,22 @@ def pause():
 def list_groups():
     groups = load_groups()
     if not groups:
-        print('No groups defined yet.')
+        print(c('No groups defined yet.', 'bright_red'))
         return
-    print('Defined groups:')
+    print(c('Defined groups:', 'bright_green', bold=True))
     for name, path in sorted(groups.items()):
-        print(f'  - {name}: {path}')
+        print(f"  - {c(name, 'bright_yellow')} : {c(path, 'bright_blue')}")
 
 
 def add_group_interactive():
-    name = input('New group name: ').strip()
+    name = input(c('New group name: ', 'magenta', bold=True)).strip()
     if not name:
-        print('Cancelled — empty name.')
+        print(c('Cancelled — empty name.', 'red'))
         return
-    path = input('Path to markdown file (leave blank for default ~/tnm/<name>.md): ').strip()
+    path = input(c('Path to markdown file (leave blank for default ~/tnm/<name>.md): ', 'cyan')).strip()
     if not path:
         path = f"~/tnm/{name}.md"
-        print(f"Using default path: {path}")
+        print(c(f"Using default path: {path}", 'bright_black'))
     groups = load_groups()
     if name in groups:
         resp = input(f"Group '{name}' exists. Overwrite mapping? [y/N]: ").strip().lower()
@@ -92,38 +141,38 @@ def add_group_interactive():
             return
     ok = create_group(name, path, overwrite=True)
     if ok:
-        print(f"Group '{name}' -> {path} saved.")
+        print(c(f"Group '{name}' -> {path} saved.", 'bright_green'))
     else:
-        print('Failed to save group configuration.')
+        print(c('Failed to save group configuration.', 'red'))
 
 
 def delete_group_interactive():
-    name = input('Group name to delete: ').strip()
+    name = input(c('Group name to delete: ', 'magenta', bold=True)).strip()
     if not name:
-        print('Cancelled — empty name.')
+        print(c('Cancelled — empty name.', 'red'))
         return
     groups = load_groups()
     if name not in groups:
         print(f"Group '{name}' not found.")
         return
-    resp = input(f"Delete group '{name}' (will not delete the file) ? [y/N]: ").strip().lower()
+    resp = input(c(f"Delete group '{name}' (will not delete the file) ? [y/N]: ", 'yellow')).strip().lower()
     if resp not in ('y', 'yes'):
-        print('Cancelled.')
+        print(c('Cancelled.', 'red'))
         return
     groups.pop(name, None)
     if save_groups(groups):
-        print(f"Group '{name}' removed.")
+        print(c(f"Group '{name}' removed.", 'bright_green'))
     else:
-        print('Failed to update groups file.')
+        print(c('Failed to update groups file.', 'red'))
 
 
 def show_help():
-    print('Main commands:')
-    print('  -n NAME PATH   Create a new group mapping (tnm -n NAME PATH)')
-    print('  -g NAME        Add last command to group (tnm -g NAME)')
-    print('  -l             List groups (tnm -l)')
-    print('  --dry-run      Show what would be written (tnm --dry-run)')
-    print('  -y             Skip confirmations where applicable')
+    print(c('Main commands:', 'bright_blue', bold=True))
+    print(c('  -n NAME PATH   Create a new group mapping (tnm -n NAME PATH)', 'bright_white'))
+    print(c('  -g NAME        Add last command to group (tnm -g NAME)', 'bright_white'))
+    print(c('  -l             List groups (tnm -l)', 'bright_white'))
+    print(c('  --dry-run      Show what would be written (tnm --dry-run)', 'bright_white'))
+    print(c('  -y             Skip confirmations where applicable', 'bright_white'))
 
 
 def show_history_interactive():
@@ -132,10 +181,10 @@ def show_history_interactive():
     if not groups:
         print('No groups defined yet.')
         return
-    print('Choose a group to view history:')
+    print(c('Choose a group to view history:', 'bright_blue', bold=True))
     names = sorted(groups.keys())
     for i, name in enumerate(names, 1):
-        print(f'  {i}. {name} -> {groups[name]}')
+        print(f"  {c(str(i)+'.', 'bright_green')} {c(name, 'bright_yellow')} -> {c(groups[name], 'bright_blue')}")
     try:
         sel = input('\nEnter number (or blank to cancel): ').strip()
     except (KeyboardInterrupt, EOFError):
@@ -155,7 +204,7 @@ def show_history_interactive():
     path = groups[name]
     p = Path(path).expanduser()
     if not p.exists():
-        print(f"History file '{p}' does not exist or has no entries.")
+        print(c(f"History file '{p}' does not exist or has no entries.", 'red'))
         return
     try:
         text = p.read_text(encoding='utf-8')
@@ -171,7 +220,7 @@ def show_history_interactive():
     recent = parts[-10:]
     # display with newest first
     recent = list(reversed(recent))
-    print(f"\nLast {len(recent)} entries for group '{name}':\n")
+    print(c(f"\nLast {len(recent)} entries for group '{name}':\n", 'bright_green', bold=True))
     for i, entry in enumerate(recent, 1):
         # title is first non-empty line
         title = '(no title)'
@@ -185,7 +234,7 @@ def show_history_interactive():
         lines = [ln for ln in entry.splitlines() if ln.strip()]
         if len(lines) >= 2:
             meta = lines[1]
-        print(f"  {i}. {title} {meta}")
+    print(f"  {c(str(i)+'.', 'bright_green')} {c(title, 'bright_yellow')} {c(meta, 'bright_black')}")
 
     while True:
         choice = input('\nEnter entry number to view (or blank to return): ').strip()
@@ -199,40 +248,39 @@ def show_history_interactive():
         except ValueError:
             print('Invalid input')
             continue
-        print('\n' + '=' * 40 + '\n')
-        print(recent[ci])
-        print('\n' + '=' * 40 + '\n')
-        input('Press Enter to continue...')
+    print('\n' + c('=' * 40, 'bright_black') + '\n')
+    print(c(recent[ci], 'bright_white'))
+    print('\n' + c('=' * 40, 'bright_black') + '\n')
+    input(c('Press Enter to continue...', 'bright_blue'))
 
 
 def uninstall_interactive():
     """Run the uninstall script (if present) after user confirmation."""
     script_dir = Path(__file__).resolve().parent
     uninstall_script = script_dir / 'uninstall_tnm.sh'
-    print('This will uninstall tnm from the default user locations:')
-    print('  - ~/.local/share/tnm (installed files)')
-    print('  - ~/.local/bin/tnm (launcher)')
-    print('  - ~/.config/tnm (groups config)')
-    resp = input('Are you sure you want to continue? [y/N]: ').strip().lower()
+    print(c('This will uninstall tnm from the default user locations:', 'yellow'))
+    print(c('  - ~/.local/share/tnm (installed files)', 'bright_black'))
+    print(c('  - ~/.local/bin/tnm (launcher)', 'bright_black'))
+    print(c('  - ~/.config/tnm (groups config)', 'bright_black'))
+    resp = input(c('Are you sure you want to continue? [y/N]: ', 'yellow')).strip().lower()
     if resp not in ('y', 'yes'):
-        print('Cancelled.')
+        print(c('Cancelled.', 'red'))
         return
-
     if uninstall_script.exists():
         try:
-            print(f'Running uninstall script: {uninstall_script}')
+            print(c(f'Running uninstall script: {uninstall_script}', 'bright_blue'))
             subprocess.run(['bash', str(uninstall_script)], check=True)
-            print('Uninstall script completed.')
+            print(c('Uninstall script completed.', 'bright_green'))
         except subprocess.CalledProcessError as e:
             print(f'Uninstall script failed: {e}')
     else:
         # fallback: perform removal directly
-        print('Uninstall script not found in install dir; performing default removal now...')
+        print(c('Uninstall script not found in install dir; performing default removal now...', 'yellow'))
         try:
             subprocess.run(['rm', '-rf', str(Path.home() / '.local' / 'share' / 'tnm')], check=False)
             subprocess.run(['rm', '-f', str(Path.home() / '.local' / 'bin' / 'tnm')], check=False)
             subprocess.run(['rm', '-rf', str(Path.home() / '.config' / 'tnm')], check=False)
-            print('Default uninstall actions completed.')
+            print(c('Default uninstall actions completed.', 'bright_green'))
         except Exception as e:
             print(f'Failed to remove files: {e}')
 
@@ -241,17 +289,17 @@ def update_interactive():
     """Run the update script from the installed share dir (or attempt to download it)"""
     script_dir = Path(__file__).resolve().parent
     update_script = script_dir / 'update_tnm.sh'
-    print('This will fetch the latest tnm files from https://github.com/i7mada249/tnm and update the installed scripts.')
-    resp = input('Continue and update? [y/N]: ').strip().lower()
+    print(c('This will fetch the latest tnm files from https://github.com/i7mada249/tnm and update the installed scripts.', 'yellow'))
+    resp = input(c('Continue and update? [y/N]: ', 'yellow')).strip().lower()
     if resp not in ('y', 'yes'):
         print('Cancelled.')
         return
 
     if update_script.exists():
         try:
-            print(f'Running update script: {update_script}')
+            print(c(f'Running update script: {update_script}', 'bright_blue'))
             subprocess.run(['bash', str(update_script)], check=True)
-            print('Update completed.')
+            print(c('Update completed.', 'bright_green'))
         except subprocess.CalledProcessError as e:
             print(f'Update script failed: {e}')
     else:
@@ -259,14 +307,14 @@ def update_interactive():
         url = 'https://raw.githubusercontent.com/i7mada249/tnm/main/update_tnm.sh'
         try:
             import urllib.request
-            print(f'Downloading update script from {url}...')
+            print(c(f'Downloading update script from {url}...', 'bright_blue'))
             data = urllib.request.urlopen(url, timeout=15).read()
             tmp = script_dir / 'update_tnm_downloaded.sh'
             tmp.write_bytes(data)
             tmp.chmod(0o755)
             subprocess.run(['bash', str(tmp)], check=True)
             tmp.unlink()
-            print('Update completed (downloaded script).')
+            print(c('Update completed (downloaded script).', 'bright_green'))
         except Exception as e:
             print(f'Failed to download/run update script: {e}')
 
@@ -274,18 +322,18 @@ def update_interactive():
 def main_loop():
     while True:
         clear()
-        print(ASCII)
+        print(c(ASCII, 'cyan'))
         list_groups()
-        print('\nOptions:')
-        print('  [a] Add group')
-        print('  [d] Delete group')
-        print('  [l] List groups')
-        print('  [v] View group history')
-        print('  [r] Update tnm from repo')
-        print('  [u] Uninstall tnm')
-        print('  [h] Help (show main commands)')
-        print('  [q] Quit')
-        choice = input('\nChoose an option: ').strip().lower()
+        print('\n' + c('Options:', 'bright_blue', bold=True))
+        print(f"  {c('[a]', 'green')} {c('Add group', 'bright_white')}")
+        print(f"  {c('[d]', 'green')} {c('Delete group', 'bright_white')}")
+        print(f"  {c('[l]', 'green')} {c('List groups', 'bright_white')}")
+        print(f"  {c('[v]', 'green')} {c('View group history', 'bright_white')}")
+        print(f"  {c('[r]', 'green')} {c('Update tnm from repo', 'bright_white')}")
+        print(f"  {c('[u]', 'green')} {c('Uninstall tnm', 'bright_white')}")
+        print(f"  {c('[h]', 'green')} {c('Help (show main commands)', 'bright_white')}")
+        print(f"  {c('[q]', 'green')} {c('Quit', 'bright_white')}")
+        choice = input(c('\nChoose an option: ', 'magenta', bold=True)).strip().lower()
         if choice == 'a':
             add_group_interactive()
             pause()
