@@ -65,7 +65,7 @@ if [[ $LOCAL -eq 0 && -z "$BASE_URL" ]]; then
 fi
 
 # files to install
-FILES=(tnm.py tnm_shell.py README.md)
+FILES=(tnm.py tnm_shell.py README.md uninstall_tnm.sh)
 
 # downloader function
 download_file(){
