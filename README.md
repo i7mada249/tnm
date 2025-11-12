@@ -1,4 +1,12 @@
 # tnm — Terminal Notes Manager
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+░░░████████╗███╗░░██╗███╗░░░███╗░░░░
+░░░╚══██╔══╝████╗░██║████╗░████║░░░░
+░░░░░░██║░░░██╔██╗██║██╔████╔██║░░░░
+░░░░░░██║░░░██║╚████║██║╚██╔╝██║░░░░
+░░░░░░██║░░░██║░╚███║██║░╚═╝░██║░░░░
+░░░░░░╚═╝░░░╚═╝░░╚══╝╚═╝░░░░░╚═╝░░░░
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 Terminal Notes Manager (tnm) is a small command-line helper to capture the last command you ran in an interactive shell, add a short title/description, and save it as a nicely formatted Markdown entry. Commands are grouped into named "groups" (each group maps to a Markdown file) so you can collect related snippets together.
 
