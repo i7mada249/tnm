@@ -90,6 +90,92 @@ def build_entry(title: str, cmd: str, desc: str) -> str:
     return "\n".join(entry) + "\n"
 
 
+def build_session_entry(title: str, cmds: list, desc: str) -> str:
+    """Build a single markdown entry that contains multiple commands from a session."""
+    ts = datetime.now().isoformat(sep=' ', timespec='seconds')
+    cwd = os.getcwd()
+    entry = []
+    entry.append(f"# {title}")
+    entry.append("")
+    entry.append(f"*Saved: {ts} — cwd: {cwd}*")
+    entry.append("")
+    entry.append("Session commands:")
+    entry.append("")
+    entry.append("```bash")
+    for c in cmds:
+        entry.append(c)
+    entry.append("```")
+    entry.append("")
+    entry.append(desc)
+    entry.append("")
+    entry.append("---")
+    return "\n".join(entry) + "\n"
+
+
+def read_history_last(n: int):
+    """Read the last n commands from a likely history file.
+
+    Best-effort: check $HISTFILE, then ~/.zsh_history, then ~/.bash_history.
+    Returns a list of command strings (oldest->newest) up to n items.
+    """
+    shell = os.environ.get('SHELL', 'bash')
+    histfile = os.environ.get('HISTFILE')
+    candidates = []
+    if histfile:
+        candidates.append(histfile)
+    if shell.endswith('zsh'):
+        candidates.append(os.path.expanduser('~/.zsh_history'))
+    candidates.append(os.path.expanduser('~/.bash_history'))
+
+    for path in candidates:
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as h:
+                lines = [ln.strip() for ln in h.readlines() if ln.strip()]
+        except Exception:
+            continue
+
+        cmds = []
+        for line in reversed(lines):
+            l = line
+            # zsh history timestamp format: ': 160000:0;cmd'
+            if l.startswith(':') and ';' in l:
+                l = l.split(';', 1)[1]
+            l = l.strip()
+            if not l:
+                continue
+            # skip tnm invocations and single-char accidental entries
+            if _looks_like_invocation(l):
+                continue
+            if len(l) <= 1:
+                continue
+            cmds.append(l)
+            if len(cmds) >= n:
+                break
+        if cmds:
+            return list(reversed(cmds))
+    return []
+
+
+def _looks_like_invocation(cmd: str) -> bool:
+    """Return True if the given cmd looks like an invocation of this tnm script."""
+    try:
+        invoked = ' '.join(sys.argv)
+        invoked_basename = Path(sys.argv[0]).name
+        invoked_stem = Path(sys.argv[0]).stem
+    except Exception:
+        invoked = ''
+        invoked_basename = ''
+        invoked_stem = ''
+    low = cmd.strip()
+    if invoked and invoked in low:
+        return True
+    if invoked_basename and invoked_basename in low:
+        return True
+    if invoked_stem and invoked_stem in low:
+        return True
+    return False
+
+
 CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'tnm'
 GROUPS_FILE = CONFIG_DIR / 'groups.json'
 
@@ -176,6 +262,15 @@ def main(argv=None):
                 cmd_override = argv[i + 1]
         except ValueError:
             pass
+    # optional: import last N commands from history as a single session entry
+    last_n = None
+    if '--last' in argv:
+        try:
+            i = argv.index('--last')
+            if i + 1 < len(argv):
+                last_n = int(argv[i + 1])
+        except Exception:
+            last_n = None
 
     # Quick list of groups
     if argv[0] in ('-l', '--list') or '-l' in argv:
@@ -222,6 +317,30 @@ def main(argv=None):
                 print(f"Group '{name}' not found. Available groups: {', '.join(sorted(groups.keys()))}")
             else:
                 print("No groups defined yet. Create one with: tnm -n NAME PATH")
+            return
+
+        # if user requested importing last N commands from history, do that
+        if last_n is not None and last_n > 0:
+            cmds = read_history_last(last_n)
+            if not cmds:
+                print("Couldn't fetch any commands from history.")
+                return
+            # prompt for title/desc
+            try:
+                title = input(f"Title for session (will contain last {last_n} commands): ").strip()
+                desc = input("Description: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print('\nAborted by user.')
+                return
+            session_entry = build_session_entry(title or f'Session - last {last_n} cmds', cmds, desc or '')
+            try:
+                tp = Path(os.path.expanduser(target))
+                tp.parent.mkdir(parents=True, exist_ok=True)
+                with open(tp, 'a', encoding='utf-8') as f:
+                    f.write(session_entry)
+                print(f"Saved session to {tp}")
+            except Exception as e:
+                print(f"Failed to write to {target}: {e}")
             return
 
         if cmd_override:

@@ -8,23 +8,40 @@
 ░░░░░░╚═╝░░░╚═╝░░╚══╝╚═╝░░░░░╚═╝░░░░
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
-Terminal Notes Manager (tnm) is a small command-line helper to capture the last command you ran in an interactive shell, add a short title/description, and save it as a nicely formatted Markdown entry. Commands are grouped into named "groups" (each group maps to a Markdown file) so you can collect related snippets together.
+Terminal Notes Manager (tnm) helps you capture commands you run in the terminal and save them as readable Markdown notes, grouped by topic. It's lightweight and intentionally simple: groups map to Markdown files, and each saved entry contains a title, timestamp, cwd, the command (fenced bash block) and an optional description.
 
-This repository includes:
+This repo contains:
 
-- `tnm.py` — the CLI tool. Use it to create groups and add entries from the command line.
-- `tnm_shell.py` — an interactive curses-free shell UI that lists groups, allows creating/deleting groups, viewing recent history, updating and uninstalling.
-- `install.sh` — per-user installer that places scripts into `~/.local/share/tnm` and creates `~/.local/bin/tnm` launcher.
-- `uninstall_tnm.sh` — removes installed files.
-- `update_tnm.sh` — helper that updates installed files from the main GitHub repository.
+- `tnm.py` — the CLI tool
+- `tnm_shell.py` — interactive terminal UI (TTY-based, no curses dependency)
+- `install.sh` / `update_tnm.sh` / `uninstall_tnm.sh` — installer/update/uninstall helpers
 
-Install location & config
+## Table of contents
 
-- Installed files go to: `~/.local/share/tnm`
-- Launcher: `~/.local/bin/tnm` (created by `install.sh`)
-- Group definitions are stored at: `$XDG_CONFIG_HOME/tnm/groups.json` (default `~/.config/tnm/groups.json`)
+- Features
+- Install
+- Basic usage
+- Session import (`--last`)
+- Shell tips for reliable history capture
+- Environment variables & debug
+- Examples
+- Contributing
 
-Quick install (local testing)
+---
+
+## Features
+
+- Create named groups (mapping to Markdown files)
+- Append the last command to a group (with title + description)
+- Bulk-import the last N commands from your current shell history as a single session entry (`--last N`)
+- Interactive shell UI for browsing groups and entries
+- Simple per-user installer and updater
+
+---
+
+## Install (per-user)
+
+Quick locally (for testing):
 
 ```bash
 chmod +x install.sh
@@ -32,98 +49,119 @@ chmod +x install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Or host the repo and run the installer with `--src-base-url` pointing at the raw files.
+The installer copies files to `~/.local/share/tnm` and creates a launcher at `~/.local/bin/tnm`. Group mappings live in `$XDG_CONFIG_HOME/tnm/groups.json` (defaults to `~/.config/tnm/groups.json`).
 
-Basic CLI usage
+---
 
-- Create or overwrite a group mapping:
+## Basic usage
 
-	`tnm -n NAME [PATH]`
+- Create a group (map a name to a Markdown file):
 
-	If `PATH` is omitted, `tnm` will default to `/home/tnm/NAME.md`.
+```bash
+tnm -n NAME [PATH]
+```
+
+If `PATH` is omitted a default path is used (for per-user installs it will be `~/tnm/<name>.md`).
 
 - List groups:
 
-	`tnm -l`
+```bash
+tnm -l
+```
 
-- Add the last interactive shell command to a group:
-
-	`tnm -g NAME`
-
-	This prompts for `Title` and `Description`, then appends a formatted Markdown entry to the group's file.
-
-Global flags
-
-- `--dry-run` — print what would be written instead of writing.
-- `-y`/`--yes` — skip some confirmations.
-
-Interactive shell (`tnm` with no args)
-
-Run `tnm` (no args) to open the interactive shell UI. The shell provides:
-
-- List of defined groups and their target files
-- Add group (you can leave path blank; the default is `/home/tnm/<group>.md`)
-- Delete group mapping (file is NOT deleted by default)
-- View recent history: shows the last 10 entries for a group and lets you view full entries
-- Update: fetch latest published files from https://github.com/i7mada249/tnm and replace installed scripts
-- Uninstall: run the uninstall script and remove installed files
-
-Entry format
-
-Each saved command is appended to the group's Markdown file in this structure:
-
-- Level-1 heading with the provided title
-- A small metadata line: timestamp and cwd
-- Fenced bash block with the command
-- The description text
-- Separator `---`
-
-Example saved entry
-
-```markdown
-# Edit sudoers quickly
-
-*Saved: 2025-11-12 14:05:23 — cwd: /home/me/project*
+- Add the last command to a group (prompts for title/description):
 
 ```bash
-sudo EDITOR=nano visudo
+tnm -g NAME
 ```
 
-Open visudo to edit sudoers safely.
+- CLI flags:
+
+- `--dry-run` — print the output instead of writing
+- `-y` / `--yes` — skip confirmations
+- `-c 'command'` or `--cmd 'command'` — provide the command explicitly (no auto-capture)
+- `--last N` — import the last N commands from your history as a single session entry (see below)
 
 ---
+
+## Session import: `--last N`
+
+If you want to save multiple recent commands from the terminal you were using (without starting a special session), use `--last N`:
+
+```bash
+tnm -g work --last 20
 ```
 
-Update and uninstall
+This reads the last N commands from a likely history file (best-effort: `$HISTFILE`, `~/.zsh_history`, then `~/.bash_history`), filters out accidental one-character entries and tnm invocations, and appends a single Markdown session entry containing the commands to the group's file. You'll be prompted for a title and description.
 
-- `update_tnm.sh` clones the repository and copies updated files into the installed folder (default `~/.local/share/tnm`). It is included by `install.sh` and callable from the interactive shell.
-- `uninstall_tnm.sh` removes installed files (`~/.local/share/tnm`, `~/.local/bin/tnm`, `~/.config/tnm`) and is invoked from the interactive shell's Uninstall option.
+Notes:
 
-Security and tips
+- This is best-effort: whether the last commands are present in history depends on your shell configuration (some shells append history only at exit unless configured otherwise).
+- For more reliable results, see the Shell tips section below.
 
-- Inspect `install.sh`, `update_tnm.sh`, or any scripts before running them if you are installing from a remote source.
-- The method used to capture the last command depends on your shell. `tnm` uses your `$SHELL` and `fc -ln -1` where available, and falls back to reading common history files. This may miss commands in some shell configurations.
-- If you prefer non-interactive use, you can script Title/Description into `tnm -g` with input redirection or add CLI flags (future enhancement).
+---
 
-Examples
+## Shell tips for reliable history capture
+
+To make it more likely that recent commands appear in history files immediately (so `tnm` can read them), add these snippets to your shell config or run them in a terminal before working.
+
+- **Bash** (append history on each prompt):
+
+```bash
+# add once to your ~/.bashrc or run in the session you want to record
+export PROMPT_COMMAND='history -a; history -n;'
+```
+
+This forces bash to append each command to the history file as it runs and re-read new lines from the history file.
+
+- **Zsh** (immediate history append):
+
+```bash
+# add to ~/.zshrc
+setopt INC_APPEND_HISTORY
+setopt SHARE_HISTORY
+```
+
+These options instruct zsh to write history incrementally so other processes (or `tnm`) can read recent commands.
+
+---
+
+## Environment variables & debug
+
+- `TNM_DEBUG=1` — prints debugging information about how history was captured (helpful when diagnosing why a command wasn't found).
+- `TNM_USE_SHELL_HISTORY=1` — (opt-in) allow `tnm` to spawn a non-login shell to run `fc -ln -N` (this is fragile and returns extra startup output for some shells; file-based history reading is preferred).
+- Honor `NO_COLOR` for the interactive shell UI.
+
+---
+
+## Examples
 
 ```bash
 # create group with explicit path
 tnm -n nano ~/Documents/nano_commands.md
 
-# create group with default path (/home/tnm/git.md)
+# create group with default path
 tnm -n git
 
 # add the last command to the nano group
 tnm -g nano
 
-# list groups
-tnm -l
+# import the last 15 commands as one session entry
+tnm -g work --last 15
 
-# launch interactive shell
+# provide the command explicitly
+tnm -g snippets -c "git rebase -i HEAD~3"
+
+# launch interactive shell UI
 tnm
 ```
 
-Troubleshooting
+---
 
-- If `tnm` is not found after install, ensure `~/.local/bin` is in your PATH and reload your shell: `export PATH="$HOME/.local/bin:$PATH"` then `hash -r` or restart the shell.
+## Contributing
+
+Patches welcome. If you add features that depend on external tools (fzf, ripgrep, etc.) please make them optional and document additional install steps.
+
+---
+
+If you'd like, I can add a short animated GIF or screenshots showing the interactive shell in action and finish a short quickstart section for GitHub's README display.
