@@ -155,13 +155,3 @@ tnm -g snippets -c "git rebase -i HEAD~3"
 # launch interactive shell UI
 tnm
 ```
-
----
-
-## Contributing
-
-Patches welcome. If you add features that depend on external tools (fzf, ripgrep, etc.) please make them optional and document additional install steps.
-
----
-
-If you'd like, I can add a short animated GIF or screenshots showing the interactive shell in action and finish a short quickstart section for GitHub's README display.
