@@ -312,12 +312,19 @@ def main(argv=None):
         name = argv[1]
         target = get_group_path(name)
         if not target:
-            groups = load_groups()
-            if groups:
-                print(f"Group '{name}' not found. Available groups: {', '.join(sorted(groups.keys()))}")
+            # Auto-create a default group mapping so `tnm -g NAME` is convenient
+            default_path = os.path.join(str(Path.home()), 'tnm', f"{name}.md")
+            created = create_group(name, default_path, overwrite=False)
+            if created:
+                target = default_path
+                print(f"Group '{name}' not found. Created new group '{name}' -> {default_path}")
             else:
-                print("No groups defined yet. Create one with: tnm -n NAME PATH")
-            return
+                groups = load_groups()
+                if groups:
+                    print(f"Group '{name}' not found. Available groups: {', '.join(sorted(groups.keys()))}")
+                else:
+                    print("No groups defined yet. Create one with: tnm -n NAME PATH")
+                return
 
         # if user requested importing last N commands from history, do that
         if last_n is not None and last_n > 0:

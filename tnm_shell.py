@@ -173,6 +173,8 @@ def show_help():
     print(c('  -l             List groups (tnm -l)', 'bright_white'))
     print(c('  --dry-run      Show what would be written (tnm --dry-run)', 'bright_white'))
     print(c('  -y             Skip confirmations where applicable', 'bright_white'))
+    print(c('  -c CMD         Provide the command explicitly (tnm -g NAME -c "cmd")', 'bright_white'))
+    print(c('  --last N       Import the last N commands from your shell history as a single session entry', 'bright_white'))
 
 
 def show_history_interactive():
